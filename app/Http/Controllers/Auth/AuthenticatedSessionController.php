@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Mail\TwoFactorCodeMail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\View\View;
 
 class AuthenticatedSessionController extends Controller
@@ -24,11 +26,36 @@ class AuthenticatedSessionController extends Controller
      */
     public function store(LoginRequest $request): RedirectResponse
     {
+        // Validar credenciales
         $request->authenticate();
 
+        // MUY IMPORTANTE PARA BREEZE
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $user = Auth::user();
+
+        // Generar OTP
+        $code = rand(100000, 999999);
+
+        $user->two_factor_code = $code;
+        $user->two_factor_expires_at = now()->addMinutes(10);
+
+        $user->save();
+
+        // Enviar correo
+        Mail::to($user->email)->send(
+            new TwoFactorCodeMail($code)
+        );
+
+        // Guardar usuario temporal
+        session([
+            'two_factor_user_id' => $user->id
+        ]);
+
+        // Logout temporal
+        Auth::logout();
+
+        return redirect()->route('2fa.index');
     }
 
     /**
